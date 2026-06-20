@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>24点游戏 · 严格优先级</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            padding: 16px;
+        }
+
+        .game-container {
+            background: rgba(255,255,255,.06);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,.12);
+            border-radius: 20px;
+            padding: 28px 32px;
+            max-width: 480px;
+            width: 100%;
+            box-shadow: 0 25px 60px rgba(0,0,0,.5);
+        }
+
+        /* ===== HEADER ===== */
+        .header { text-align: center; margin-bottom: 18px; }
+        .header h1 {
+            font-size: 28px; font-weight: 800; letter-spacing: 1px;
+            background: linear-gradient(90deg,#f7971e,#ffd200);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .header p { color: rgba(255,255,255,.45); font-size: 12px; margin-top: 2px; }
+
+        /* ===== PRIORITY RULES ===== */
+        .rules {
+            display: flex; justify-content: center; gap: 6px;
+            margin-bottom: 14px; font-size: 12px; font-weight: 600;
+            flex-wrap: wrap;
+        }
+        .rules .r {
+            display: flex; align-items: center; gap: 4px;
+            padding: 3px 12px; border-radius: 6px;
+            background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.07);
+        }
+        .rules .high { color: #fbbf24; }
+        .rules .low  { color: #93c5fd; }
+        .rules .both { color: rgba(255,255,255,.5); }
+        .rules .arr  { color: rgba(255,255,255,.2); font-weight: 400; }
+
+        /* ===== SCORE BAR ===== */
+        .bar {
+            display: flex; justify-content: space-between; align-items: center;
+            background: rgba(255,255,255,.05); border-radius: 10px;
+            padding: 8px 14px; margin-bottom: 18px;
+            color: rgba(255,255,255,.7); font-size: 12px;
+        }
+        .bar .s { display: flex; align-items: center; gap: 3px; }
+        .bar .s .n { font-weight: 700; font-size: 16px; color: #fff; }
+        .bar .s .n.ok  { color: #4ade80; }
+        .bar .s .n.no  { color: #f87171; }
+        .bar .s .n.hint{ color: #fbbf24; }
+        .bar .s .n.streak{ color: #fb923c; }
+
+        /* ===== CARDS ===== */
+        .cards {
+            display: flex; justify-content: center; gap: 12px; margin-bottom: 14px;
+        }
+        .card {
+            width: 78px; height: 108px;
+            background: linear-gradient(145deg,#fff,#f0f0f0);
+            border-radius: 12px;
+            display: flex; justify-content: center; align-items: center;
+            font-size: 34px; font-weight: 800; color: #1e1e2e;
+            box-shadow: 0 6px 20px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.7);
+            transition: transform .25s, box-shadow .25s, opacity .25s, filter .25s;
+            cursor: pointer; user-select: none; position: relative;
+        }
+        .card:hover { transform: translateY(-3px) scale(1.03); box-shadow: 0 10px 28px rgba(0,0,0,.4); }
+        .card:active { transform: scale(.94); }
+        .card.used {
+            opacity: .3; filter: grayscale(.8);
+            transform: scale(.92); cursor: default;
+            box-shadow: 0 2px 8px rgba(0,0,0,.15);
+        }
+        .card.used:hover { transform: scale(.92); }
+        .card .badge {
+            position: absolute; top: -6px; right: -6px;
+            background: #f87171; color: #fff;
+            font-size: 10px; font-weight: 700;
+            width: 20px; height: 20px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; transition: opacity .2s;
+        }
+        .card.used .badge { opacity: 1; }
+
+        @keyframes pop {
+            0% { transform: scale(.5); opacity: 0; }
+            60% { transform: scale(1.08); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .card.pop { animation: pop .35s ease-out both; }
+        .card:nth-child(1) { animation-delay: 0s; }
+        .card:nth-child(2) { animation-delay: .05s; }
+        .card:nth-child(3) { animation-delay: .1s; }
+        .card:nth-child(4) { animation-delay: .15s; }
+
+        /* ===== EXPRESSION DISPLAY ===== */
+        .expr-display {
+            background: rgba(0,0,0,.25);
+            border: 2px solid rgba(255,255,255,.08);
+            border-radius: 10px; padding: 10px 14px;
+            margin-bottom: 10px;
+            font-family: 'Consolas','Courier New',monospace;
+            font-size: 22px; color: #fff; min-height: 48px;
+            display: flex; align-items: center;
+            cursor: text; user-select: none;
+            transition: border-color .2s, background .2s;
+            word-break: break-all;
+            position: relative;
+        }
+        .expr-display .cursor {
+            display: inline-block;
+            width: 2px; height: 26px;
+            background: #fbbf24;
+            margin-left: 1px;
+            animation: blink .8s step-end infinite;
+        }
+        .expr-display .ph {
+            color: rgba(255,255,255,.2); font-size: 16px;
+        }
+        .expr-display .num-used {
+            color: #fbbf24;
+        }
+        .expr-display:focus-within { border-color: #fbbf24; background: rgba(0,0,0,.35); }
+        .expr-display.err { border-color: #f87171; background: rgba(248,113,113,.08); }
+        .expr-display.ok  { border-color: #4ade80; background: rgba(74,222,128,.08); }
+
+        @keyframes blink { 50% { opacity: 0; } }
+
+        .hidden-input {
+            position: absolute; left: -9999px; top: -9999px;
+            opacity: 0; width: 1px; height: 1px;
+        }
+
+        /* ===== VIRTUAL KEYPAD ===== */
+        .keypad {
+            display: flex; flex-direction: column; gap: 6px;
+            margin-bottom: 12px;
+        }
+        .keypad .row {
+            display: flex; gap: 6px;
+        }
+        .keypad .row .k {
+            flex: 1; padding: 12px 0;
+            border-radius: 8px; border: 1px solid rgba(255,255,255,.08);
+            background: rgba(255,255,255,.06);
+            color: #fff; font-size: 20px; font-weight: 700;
+            cursor: pointer; user-select: none;
+            text-align: center;
+            transition: background .15s, transform .1s, box-shadow .15s;
+            font-family: 'Consolas', monospace;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .keypad .row .k:active { transform: scale(.94); }
+        .keypad .row .k:hover { background: rgba(255,255,255,.12); }
+
+        .keypad .row .k.num {
+            background: linear-gradient(145deg, #ffffff, #e8e8e8);
+            color: #1e1e2e; border-color: rgba(255,255,255,.2);
+            font-size: 22px;
+        }
+        .keypad .row .k.num:hover { background: linear-gradient(145deg, #fff, #f5f5f5); }
+        .keypad .row .k.num.used {
+            opacity: .25; filter: grayscale(.8);
+            pointer-events: none;
+        }
+
+        .keypad .row .k.op {
+            color: #fbbf24;
+            border-color: rgba(251,191,36,.15);
+            background: rgba(251,191,36,.06);
+        }
+        .keypad .row .k.op:hover { background: rgba(251,191,36,.14); }
+
+        .keypad .row .k.paren {
+            color: #a78bfa;
+            border-color: rgba(167,139,250,.15);
+            background: rgba(167,139,250,.06);
+        }
+        .keypad .row .k.paren:hover { background: rgba(167,139,250,.14); }
+
+        .keypad .row .k.act {
+            color: rgba(255,255,255,.6);
+            border-color: rgba(255,255,255,.06);
+            background: rgba(255,255,255,.04);
+            font-size: 18px;
+        }
+        .keypad .row .k.act:hover { background: rgba(255,255,255,.1); }
+
+        .keypad .row .k.go {
+            background: linear-gradient(135deg,#f7971e,#ffd200);
+            color: #1e1e2e; border: none; font-size: 18px;
+            box-shadow: 0 2px 10px rgba(247,151,30,.3);
+        }
+        .keypad .row .k.go:hover { box-shadow: 0 4px 18px rgba(247,151,30,.45); }
+
+        .keypad .row .k.hint-key {
+            color: #93c5fd; font-size: 14px;
+            border-color: rgba(59,130,246,.15);
+            background: rgba(59,130,246,.06);
+        }
+        .keypad .row .k.hint-key:hover { background: rgba(59,130,246,.14); }
+
+        .keypad .row .k.new-key {
+            color: #4ade80; font-size: 14px;
+            border-color: rgba(74,222,128,.15);
+            background: rgba(74,222,128,.06);
+        }
+        .keypad .row .k.new-key:hover { background: rgba(74,222,128,.14); }
+        .keypad .row .k.new-key.disabled {
+            opacity: .3; pointer-events: none;
+            filter: grayscale(.8);
+        }
+        .keypad .row .k.new-key.ready {
+            background: rgba(74,222,128,.2);
+            border-color: rgba(74,222,128,.4);
+            box-shadow: 0 0 12px rgba(74,222,128,.15);
+            animation: pulse-green 1.5s ease-in-out infinite;
+        }
+        @keyframes pulse-green {
+            0%, 100% { box-shadow: 0 0 8px rgba(74,222,128,.1); }
+            50% { box-shadow: 0 0 18px rgba(74,222,128,.3); }
+        }
+
+        .kb-hint {
+            font-size: 10px; font-weight: 400;
+            color: rgba(255,255,255,.2);
+            display: block; margin-top: 1px;
+        }
+
+        /* ===== FEEDBACK ===== */
+        .fb {
+            margin-top: 4px; padding: 12px 16px; border-radius: 10px;
+            font-size: 13px; text-align: center;
+            min-height: 44px; display: flex; align-items: center; justify-content: center;
+            flex-direction: column; gap: 6px;
+            transition: all .35s ease;
+            opacity: 0; transform: translateY(6px);
+        }
+        .fb.show { opacity: 1; transform: translateY(0); }
+        .fb.ok  { background: rgba(74,222,128,.12); border: 1px solid rgba(74,222,128,.2); color: #4ade80; }
+        .fb.err { background: rgba(248,113,113,.12); border: 1px solid rgba(248,113,113,.2); color: #f87171; }
+        .fb.info{ background: rgba(59,130,246,.12); border: 1px solid rgba(59,130,246,.2); color: #93c5fd; }
+        .fb.hint{ background: rgba(251,191,36,.12); border: 1px solid rgba(251,191,36,.2); color: #fbbf24; }
+
+        /* ===== STEPS ===== */
+        .steps {
+            font-family: 'Consolas','Courier New',monospace;
+            font-size: 12px; text-align: left; width: 100%;
+            line-height: 1.7;
+        }
+        .steps .st {
+            display: flex; align-items: center; gap: 6px;
+            padding: 2px 6px; border-radius: 4px;
+            opacity: 0; transform: translateY(6px);
+            animation: stepIn .3s ease forwards;
+        }
+        .steps .st:nth-child(1) { animation-delay: .0s; }
+        .steps .st:nth-child(2) { animation-delay: .1s; }
+        .steps .st:nth-child(3) { animation-delay: .2s; }
+        .steps .st:nth-child(4) { animation-delay: .3s; }
+        .steps .st:nth-child(5) { animation-delay: .4s; }
+        .steps .st:nth-child(6) { animation-delay: .5s; }
+        .steps .st:nth-child(7) { animation-delay: .6s; }
+
+        @keyframes stepIn {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .steps .st .lb { color: rgba(255,255,255,.25); font-size: 10px; min-width: 22px; }
+        .steps .st .hi  { color: #fbbf24; font-weight: 700; }
+        .steps .st .lo  { color: #93c5fd; font-weight: 700; }
+        .steps .sp { border-top: 1px solid rgba(255,255,255,.05); margin: 1px 0; }
+        .steps .fn {
+            font-weight: 700; font-size: 14px;
+            border-top: 1px solid rgba(255,255,255,.08);
+            padding-top: 4px; margin-top: 2px;
+        }
+        .steps .fn.fn-ok  { color: #4ade80; }
+        .steps .fn.fn-err { color: #f87171; }
+
+        /* ===== FOOTER ===== */
+        .footer { text-align: center; margin-top: 14px; color: rgba(255,255,255,.12); font-size: 10px; line-height: 1.5; }
+        .footer .hl { color: rgba(255,255,255,.2); }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 460px) {
+            .game-container { padding: 18px 14px; }
+            .card { width: 64px; height: 90px; font-size: 28px; }
+            .cards { gap: 8px; }
+            .header h1 { font-size: 22px; }
+            .expr-display { font-size: 18px; padding: 8px 10px; min-height: 40px; }
+            .keypad .row .k { font-size: 17px; padding: 10px 0; }
+            .keypad .row .k.num { font-size: 18px; }
+            .rules { font-size: 10px; }
+            .bar { font-size: 10px; flex-wrap: wrap; gap: 2px; justify-content: center; }
+            .bar .s .n { font-size: 14px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🎯 24 点</h1>
+            <p>点击按钮组算式，用尽四个数字算出 24</p>
+        </div>
+
+        <!-- Priority Rules -->
+        <div class="rules">
+            <div class="r"><span style="color:#fbbf24;">①</span><span class="high">× ÷</span><span style="color:rgba(255,255,255,.2);font-size:10px;">先算</span></div>
+            <span class="arr">→</span>
+            <div class="r"><span style="color:#93c5fd;">②</span><span class="low">+ −</span><span style="color:rgba(255,255,255,.2);font-size:10px;">后算</span></div>
+            <span class="arr">→</span>
+            <div class="r"><span style="color:#a78bfa;">③</span><span class="both">( )</span><span style="color:rgba(255,255,255,.2);font-size:10px;">最优先</span></div>
+            <span class="arr">→</span>
+            <div class="r"><span style="color:rgba(255,255,255,.3);font-size:10px;">同级从左→右</span></div>
+        </div>
+
+        <!-- Score Bar -->
+        <div class="bar">
+            <div class="s">🏆 <span class="n" id="rNum">1</span></div>
+            <div class="s">🔥 <span class="n streak" id="streakNum">0</span></div>
+            <div class="s">✅ <span class="n ok" id="okNum">0</span></div>
+            <div class="s">❌ <span class="n no" id="noNum">0</span></div>
+            <div class="s">💡 <span class="n hint" id="hintNum">0</span></div>
+        </div>
+
+        <!-- Cards -->
+        <div class="cards" id="cardsArea">
+            <div class="card pop" data-idx="0">?</div>
+            <div class="card pop" data-idx="1">?</div>
+            <div class="card pop" data-idx="2">?</div>
+            <div class="card pop" data-idx="3">?</div>
+        </div>
+
+        <!-- Expression Display -->
+        <div class="expr-display" id="exprDisplay" tabindex="0">
+            <span class="ph" id="placeholder">点击下方按钮输入算式</span>
+            <span id="exprContent"></span>
+            <span class="cursor"></span>
+        </div>
+        <input class="hidden-input" id="hiddenInput" type="text" autocomplete="off" spellcheck="false" />
+
+        <!-- Virtual Keypad -->
+        <div class="keypad" id="keypad">
+            <div class="row" id="numRow">
+                <div class="k num" data-val="0">0</div>
+                <div class="k num" data-val="0">0</div>
+                <div class="k num" data-val="0">0</div>
+                <div class="k num" data-val="0">0</div>
+            </div>
+            <div class="row">
+                <div class="k op" data-val="+">+</div>
+                <div class="k op" data-val="-">−</div>
+                <div class="k op" data-val="*">×</div>
+                <div class="k op" data-val="/">÷</div>
+            </div>
+            <div class="row">
+                <div class="k paren" data-val="(">(</div>
+                <div class="k paren" data-val=")">)</div>
+                <div class="k act" data-val="back">⌫</div>
+                <div class="k act" data-val="clear">清空</div>
+            </div>
+            <div class="row">
+                <div class="k hint-key" data-val="hint">💡 提示</div>
+                <div class="k new-key" data-val="new" id="nextBtn">🔄 下一关</div>
+            </div>
+            <div class="row">
+                <div class="k go" data-val="submit">✅ 验算（Enter）</div>
+            </div>
+        </div>
+
+        <!-- Feedback -->
+        <div class="fb" id="fb">
+            <div class="steps" id="stepsEl"></div>
+        </div>
+
+        <div class="footer">
+            <span class="hl">四个数字各用一次</span> · ×÷ 优先于 +− · 同级从左往右
+        </div>
+    </div>
+
+    <script>
+    (function() {
+        // ====== STATE ======
+        const state = {
+            numbers: [0,0,0,0],
+            round: 1,
+            correct: 0,
+            wrong: 0,
+            hints: 0,
+            streak: 0,
+            bestStreak: 0,
+            solved: false,
+            expr: ''       // raw expression string (uses * / internally)
+        };
+
+        // ====== LOAD / SAVE ======
+        function loadSave() {
+            try {
+                const d = JSON.parse(localStorage.getItem('game24_v2'));
+                if (d) {
+                    state.correct = d.correct || 0;
+                    state.wrong   = d.wrong || 0;
+                    state.hints   = d.hints || 0;
+                    state.streak  = d.streak || 0;
+                    state.bestStreak = d.bestStreak || 0;
+                    state.round   = d.round || 1;
+                }
+            } catch(_) {}
+        }
+        function save() {
+            try {
+                localStorage.setItem('game24_v2', JSON.stringify({
+                    correct: state.correct, wrong: state.wrong, hints: state.hints,
+                    streak: state.streak, bestStreak: state.bestStreak, round: state.round
+                }));
+            } catch(_) {}
+        }
+
+        // ====== DOM REFS ======
+        const cards = document.querySelectorAll('.card');
+        const numRow = document.getElementById('numRow');
+        const exprDisp = document.getElementById('exprDisplay');
+        const exprContent = document.getElementById('exprContent');
+        const ph = document.getElementById('placeholder');
+        const hiddenInput = document.getElementById('hiddenInput');
+        const fb = document.getElementById('fb');
+        const stepsEl = document.getElementById('stepsEl');
+        const nextBtn = document.getElementById('nextBtn');
+
+        const rNumEl = document.getElementById('rNum');
+        const okNumEl = document.getElementById('okNum');
+        const noNumEl = document.getElementById('noNum');
+        const hintNumEl = document.getElementById('hintNum');
+        const streakNumEl = document.getElementById('streakNum');
+
+        // ====== HELPERS ======
+        function randInt(a,b) { return Math.floor(Math.random()*(b-a+1))+a; }
+
+        // ====== SOLVER ======
+        function prec(op) { return op==='+'||op==='-' ? 1 : op==='*'||op==='/' ? 2 : 0; }
+        function isOp(op) { return op==='+'||op==='-'||op==='*'||op==='/'; }
+        function apply(a,op,b) {
+            if (op==='+') return a+b; if (op==='-') return a-b;
+            if (op==='*') return a*b; if (op==='/') return Math.abs(b)<1e-12?NaN:a/b;
+            return NaN;
+        }
+
+        function tokenize(s) {
+            const t=[]; let i=0;
+            while(i<s.length) {
+                const c=s[i];
+                if (c>='0'&&c<='9') { let n=''; while(i<s.length&&((s[i]>='0'&&s[i]<='9')||s[i]==='.')){n+=s[i];i++} t.push(n); }
+                else if (isOp(c)||c==='('||c===')') { t.push(c); i++; }
+                else return null;
+            }
+            return t;
+        }
+
+        function evalSteps(expr) {
+            const tk = tokenize(expr);
+            if (!tk) return {v:NaN,steps:[]};
+            const out=[], ops=[];
+            for (const t of tk) {
+                if (t[0]>='0'&&t[0]<='9') out.push(parseFloat(t));
+                else if (isOp(t)) {
+                    while(ops.length>0&&isOp(ops[ops.length-1])&&prec(ops[ops.length-1])>=prec(t))
+                        out.push(ops.pop());
+                    ops.push(t);
+                } else if (t==='(') ops.push(t);
+                else if (t===')') {
+                    while(ops.length>0&&ops[ops.length-1]!=='(') out.push(ops.pop());
+                    if(!ops.length) return {v:NaN,steps:[]};
+                    ops.pop();
+                }
+            }
+            while(ops.length>0){const o=ops.pop();if(o==='('||o===')')return{v:NaN,steps:[]};out.push(o);}
+
+            const st=[],steps=[];
+            for(const t of out){
+                if(typeof t==='number'){st.push(t);continue;}
+                if(st.length<2)return{v:NaN,steps:[]};
+                const b=st.pop(),a=st.pop(),val=apply(a,t,b);
+                if(!isFinite(val))return{v:NaN,steps:[]};
+                st.push(val);
+                steps.push({a,b,op:{'+':'＋','-':'－','*':'×','/':'÷'}[t]||t,result:val});
+            }
+            if(st.length!==1)return{v:NaN,steps:[]};
+            return {v:st[0],steps};
+        }
+
+        function solve24(nums) {
+            const ops=['+','-','*','/'];
+            const perms=function p(arr){if(arr.length<=1)return[arr.slice()];const r=[];for(let i=0;i<arr.length;i++){const rest=p(arr.slice(0,i).concat(arr.slice(i+1)));for(const x of rest)r.push([arr[i]].concat(x));}return r;}(nums);
+            const oc=function c(n){if(!n)return[[]];const r=c(n-1),rr=[];for(const x of r)for(const o of ops)rr.push([o].concat(x));return rr;}(3);
+            const is24=v=>isFinite(v)&&Math.abs(v-24)<1e-9;
+            const ocMap={'+':'＋','-':'－','*':'×','/':'÷'};
+            for(const p of perms){
+                for(const os of oc){
+                    const [a,b,c,d]=p,[o1,o2,o3]=os;
+                    const pats=[
+                        ()=>apply(apply(apply(a,o1,b),o2,c),o3,d),
+                        ()=>apply(apply(a,o1,apply(b,o2,c)),o3,d),
+                        ()=>apply(apply(a,o1,b),o3,apply(c,o2,d)),
+                        ()=>apply(a,o1,apply(apply(b,o2,c),o3,d)),
+                        ()=>apply(a,o1,apply(b,o2,apply(c,o3,d)))
+                    ];
+                    for(let pi=0;pi<5;pi++){
+                        if(is24(pats[pi]())){
+                            const s1=ocMap[o1],s2=ocMap[o2],s3=ocMap[o3];
+                            switch(pi){
+                                case 0: return `((${a}${s1}${b})${s2}${c})${s3}${d}`;
+                                case 1: return `(${a}${s1}(${b}${s2}${c}))${s3}${d}`;
+                                case 2: return `(${a}${s1}${b})${s3}(${c}${s2}${d})`;
+                                case 3: return `${a}${s1}((${b}${s2}${c})${s3}${d})`;
+                                case 4: return `${a}${s1}(${b}${s2}(${c}${s3}${d}))`;
+                            }
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+        function genNums() {
+            for(let i=0;i<300;i++){
+                const n=[]; for(let j=0;j<4;j++) n.push(randInt(1,Math.random()<.15?13:10));
+                if(solve24(n)) return n;
+            }
+            const fb=[[1,2,3,4],[1,3,4,6],[1,4,5,6],[1,5,5,5],[2,2,4,8],[2,3,3,4],[2,3,4,5],[2,4,6,8],[3,3,7,7],[3,3,8,8],[3,4,5,8],[3,4,6,8],[4,4,6,9],[4,5,7,9],[5,5,5,5],[6,6,6,6]];
+            return fb[randInt(0,fb.length-1)];
+        }
+
+        // ====== EXPRESSION & NUMBER USAGE TRACKING ======
+        function getNumbersInExpr(e) {
+            const m = e.match(/\d+/g);
+            return m ? m.map(Number) : [];
+        }
+
+        function updateCardUsage() {
+            const used = getNumbersInExpr(state.expr);
+            // Count how many times each number is used in the expression
+            const countInExpr = {};
+            for (const n of used) { countInExpr[n] = (countInExpr[n]||0) + 1; }
+
+            // Count how many times each number appears in the given set
+            const countGiven = {};
+            for (const n of state.numbers) { countGiven[n] = (countGiven[n]||0) + 1; }
+
+            // For each card position, check if that specific instance is "used up"
+            // We need to track which instance we're at
+            const runningCount = {};
+
+            cards.forEach((card, idx) => {
+                const n = state.numbers[idx];
+                runningCount[n] = (runningCount[n]||0) + 1;
+                // It's "used" if the count of this number in the expression
+                // is >= the count up to this position
+                const isUsed = (countInExpr[n]||0) >= runningCount[n];
+                card.classList.toggle('used', isUsed);
+            });
+
+            // Also update keypad number buttons
+            const numKeys = numRow.querySelectorAll('.k.num');
+            // Reset running count for keypad
+            const rc2 = {};
+            numKeys.forEach((k, idx) => {
+                const n = state.numbers[idx];
+                rc2[n] = (rc2[n]||0) + 1;
+                const isUsed = (countInExpr[n]||0) >= rc2[n];
+                k.classList.toggle('used', isUsed);
+            });
+        }
+
+        function renderExpr() {
+            // Display with × ÷ instead of * /
+            let display = state.expr.replace(/\*/g, '×').replace(/\//g, '÷').replace(/-/g, '−');
+            // Highlight numbers that are from the given set
+            if (display) {
+                exprContent.innerHTML = '';
+                // Tokenize the display for highlighting
+                const parts = display.split(/([+\-×÷()])/);
+                for (const p of parts) {
+                    if (/^\d+$/.test(p)) {
+                        const span = document.createElement('span');
+                        span.className = 'num-used';
+                        span.textContent = p;
+                        exprContent.appendChild(span);
+                    } else {
+                        exprContent.appendChild(document.createTextNode(p));
+                    }
+                }
+                ph.style.display = 'none';
+            } else {
+                exprContent.textContent = '';
+                ph.style.display = 'inline';
+            }
+            updateCardUsage();
+        }
+
+        function updateExpr(raw) {
+            state.expr = raw;
+            hiddenInput.value = raw;
+            renderExpr();
+        }
+
+        function insertAtCursor(text) {
+            state.expr += text;
+            updateExpr(state.expr);
+            exprDisp.focus();
+        }
+
+        function backspace() {
+            state.expr = state.expr.slice(0, -1);
+            updateExpr(state.expr);
+            exprDisp.focus();
+        }
+
+        function clearExpr() {
+            state.expr = '';
+            updateExpr(state.expr);
+            fb.className = 'fb';
+            stepsEl.innerHTML = '';
+            exprDisp.className = 'expr-display';
+            exprDisp.focus();
+        }
+
+        // ====== UI UPDATES ======
+        function updateScore() {
+            rNumEl.textContent = state.round;
+            okNumEl.textContent = state.correct;
+            noNumEl.textContent = state.wrong;
+            hintNumEl.textContent = state.hints;
+            streakNumEl.textContent = state.streak;
+            save();
+        }
+
+        function updateNextBtn() {
+            if (state.solved) {
+                nextBtn.textContent = '➡️ 下一关 →';
+                nextBtn.classList.remove('disabled');
+                nextBtn.classList.add('ready');
+            } else {
+                nextBtn.textContent = '🔒 下一关';
+                nextBtn.classList.add('disabled');
+                nextBtn.classList.remove('ready');
+            }
+        }
+
+        function showFB(msg, type) {
+            fb.className = 'fb show ' + type;
+            stepsEl.innerHTML = msg;
+        }
+
+        function renderStepsHTML(steps, origExpr, val, isOk) {
+            let html = '';
+            let disp = origExpr.replace(/\*/g,'×').replace(/\//g,'÷').replace(/-/g,'−');
+            html += `<div class="st"><span class="lb">📝</span><span>${disp}</span></div>`;
+            html += '<div class="sp"></div>';
+            steps.forEach((s,i)=>{
+                const hi = s.op==='×'||s.op==='÷';
+                const cls = hi ? 'hi' : 'lo';
+                const num = i+1;
+                const r = Number.isInteger(s.result)?s.result:s.result.toFixed(4);
+                html += `<div class="st"><span class="lb">#${num}</span>`;
+                html += `<span><span class="${cls}">${s.a} ${s.op} ${s.b} = ${r}</span></span></div>`;
+            });
+            html += '<div class="sp"></div>';
+            const fc = isOk ? 'fn fn-ok' : 'fn fn-err';
+            const ic = isOk ? '✅' : '❌';
+            const vs = Number.isInteger(val)?val:val.toFixed(4);
+            html += `<div class="st ${fc}"><span class="lb">${ic}</span><span>结果 = ${vs} ${isOk?'= 24 ✓':'≠ 24'}</span></div>`;
+            return html;
+        }
+
+        // ====== MAIN ACTIONS ======
+        function submitGuess() {
+            if (state.solved) {
+                showFB('🎉 已答对，点「下一关」继续', 'info');
+                return;
+            }
+            const e = state.expr.trim();
+            if (!e) {
+                showFB('请先输入算式', 'info');
+                exprDisp.className = 'expr-display err';
+                return;
+            }
+
+            // Clean for validation
+            let cleaned = e.replace(/\s+/g,'');
+            cleaned = cleaned.replace(/×/g,'*').replace(/÷/g,'/').replace(/−/g,'-').replace(/＋/g,'+');
+
+            if (!/^[\d+\-*/().]+$/.test(cleaned)) {
+                showFB('只能使用数字、+ − × ÷ 和括号 ()', 'err');
+                exprDisp.className = 'expr-display err';
+                return;
+            }
+
+            let bal = 0;
+            for (const c of cleaned) { if(c==='(')bal++; if(c===')')bal--; if(bal<0){showFB('括号不匹配（多了右括号）','err');exprDisp.className='expr-display err';return;} }
+            if(bal!==0){showFB('括号不匹配（少右括号）','err');exprDisp.className='expr-display err';return;}
+
+            const usedNums = (cleaned.match(/\d+/g)||[]).map(Number).filter(n=>Number.isInteger(n)&&n>=1&&n<=13);
+            if (usedNums.length !== 4) {
+                showFB(`请用全部 4 个数字（当前用了 ${usedNums.length} 个）`, 'err');
+                exprDisp.className = 'expr-display err';
+                return;
+            }
+            const sg = [...state.numbers].sort((a,b)=>a-b);
+            const su = [...usedNums].sort((a,b)=>a-b);
+            for(let i=0;i<4;i++){if(sg[i]!==su[i]){showFB(`请使用给出的四个数字：${state.numbers.join(', ')}`,'err');exprDisp.className='expr-display err';return;}}
+
+            const res = evalSteps(cleaned);
+            if (!isFinite(res.v) || !res.steps.length) {
+                showFB('算式有误（除以零或格式错误）', 'err');
+                exprDisp.className = 'expr-display err';
+                return;
+            }
+
+            const is24 = Math.abs(res.v - 24) < 1e-9;
+            const html = renderStepsHTML(res.steps, cleaned, res.v, is24);
+
+            if (is24) {
+                state.correct++;
+                state.streak++;
+                if (state.streak > state.bestStreak) state.bestStreak = state.streak;
+                state.solved = true;
+                exprDisp.className = 'expr-display ok';
+                showFB(html + '<div style="margin-top:6px;font-size:12px;opacity:.7;">✅ 答对了！请点击「下一关」继续</div>', 'ok');
+                updateNextBtn();
+            } else {
+                state.wrong++;
+                state.streak = 0;
+                exprDisp.className = 'expr-display err';
+                showFB(html, 'err');
+            }
+            updateScore();
+        }
+
+        function doHint() {
+            if (state.solved) {
+                showFB('已答对，点「下一关」继续', 'info');
+                return;
+            }
+            const sol = solve24(state.numbers);
+            if (sol) {
+                state.hints++;
+                state.streak = 0;
+                state.solved = true;
+                showFB(`💡 一种解法：<span style="font-family:Consolas,monospace;font-weight:700;font-size:15px;color:#fbbf24;">${sol} = 24</span><div style="margin-top:6px;font-size:12px;opacity:.7;">点「下一关」继续挑战</div>`, 'hint');
+                exprDisp.className = 'expr-display ok';
+                updateNextBtn();
+                updateScore();
+            } else {
+                showFB('🤔 未找到解（异常）', 'info');
+            }
+        }
+
+        function newRound() {
+            if (!state.solved) {
+                showFB('⚠️ 请先完成本关（答对或使用提示）才能进入下一关', 'info');
+                return;
+            }
+            state.round++;
+            state.solved = false;
+            state.numbers = genNums();
+            clearExpr();
+
+            cards.forEach((card,i)=>{
+                card.textContent = state.numbers[i];
+                card.classList.remove('pop');
+                void card.offsetWidth;
+                card.classList.add('pop');
+            });
+
+            const numKeys = numRow.querySelectorAll('.k.num');
+            numKeys.forEach((k,i)=>{
+                k.textContent = state.numbers[i];
+                k.dataset.val = state.numbers[i];
+                k.classList.remove('used');
+            });
+
+            // Update step display animation by removing and re-adding
+            fb.className = 'fb';
+            stepsEl.innerHTML = '';
+            exprDisp.className = 'expr-display';
+            updateNextBtn();
+            updateScore();
+        }
+
+        // ====== KEYPAD EVENTS ======
+        document.getElementById('keypad').addEventListener('click', function(e) {
+            const k = e.target.closest('.k');
+            if (!k) return;
+            const val = k.dataset.val;
+            if (!val) return;
+
+            switch (val) {
+                case 'submit': submitGuess(); break;
+                case 'hint':   doHint(); break;
+                case 'new':    newRound(); break;
+                case 'back':   backspace(); break;
+                case 'clear':  clearExpr(); break;
+                default:
+                    insertAtCursor(val);
+                    break;
+            }
+        });
+
+        // ====== CARD CLICKS (insert number) ======
+        cards.forEach((card, idx) => {
+            card.addEventListener('click', function() {
+                if (this.classList.contains('used')) return;
+                insertAtCursor(String(state.numbers[idx]));
+            });
+        });
+
+        // ====== KEYBOARD INPUT ======
+        // Also allow typing keyboard directly for power users
+        document.addEventListener('keydown', function(e) {
+            // Ctrl+K to focus
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                clearExpr();
+                exprDisp.focus();
+                return;
+            }
+            if (e.key === 'Enter') {
+                // Only if the game area is focused
+                if (document.activeElement === exprDisp || document.activeElement === document.body) {
+                    e.preventDefault();
+                    submitGuess();
+                }
+                return;
+            }
+
+            // Only handle when exprDisp is focused or no input is focused
+            const tag = document.activeElement && document.activeElement.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+            if (e.key === 'h' || e.key === 'H') { doHint(); return; }
+            if (e.key === 'n' || e.key === 'N') { newRound(); return; }
+            if (e.key === 'Backspace') { e.preventDefault(); backspace(); return; }
+            if (e.key === 'Delete') { e.preventDefault(); clearExpr(); return; }
+
+            // Typing
+            const map = {
+                '0':'0','1':'1','2':'2','3':'3','4':'4','5':'5',
+                '6':'6','7':'7','8':'8','9':'9',
+                '+':'+','-':'-','*':'*','/':'/',
+                '(':'(',')':')',
+            };
+            // Also accept × ÷ −
+            if (e.key === '×') { e.preventDefault(); insertAtCursor('*'); return; }
+            if (e.key === '÷') { e.preventDefault(); insertAtCursor('/'); return; }
+            if (e.key === '−') { e.preventDefault(); insertAtCursor('-'); return; }
+
+            if (map[e.key] !== undefined) {
+                e.preventDefault();
+                insertAtCursor(map[e.key]);
+            }
+        });
+
+        // ====== CLICK DISPLAY TO FOCUS ======
+        exprDisp.addEventListener('click', function() {
+            exprDisp.focus();
+        });
+
+        // ====== INIT ======
+        loadSave();
+        state.numbers = genNums();
+        cards.forEach((card, i) => { card.textContent = state.numbers[i]; });
+        const numKeys = numRow.querySelectorAll('.k.num');
+        numKeys.forEach((k, i) => { k.textContent = state.numbers[i]; k.dataset.val = state.numbers[i]; });
+        updateScore();
+        updateNextBtn();
+        renderExpr();
+        exprDisp.focus();
+    })();
+    </script>
+</body>
+</html>
